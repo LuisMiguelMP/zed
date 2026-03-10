@@ -15,6 +15,7 @@ const TOGGLE_BINDING: &str = "shift-tab";
 #[cfg(target_os = "macos")]
 mod macos_hotkey {
     use super::*;
+    use cocoa::base::id;
     use std::ffi::c_void;
 
     #[allow(non_upper_case_globals)]
@@ -161,7 +162,7 @@ mod macos_hotkey {
             // The Carbon hotkey fires for other apps, but GPUI's keyDown:/keyEquivalent:
             // dispatch runs before Carbon processes events within the same Zed process.
             // An NSEvent local monitor intercepts Shift+Tab before any window/view sees it.
-            let (local_monitor, sender_raw) = unsafe { install_local_monitor(sender) };
+            let (local_monitor, sender_raw) = unsafe { install_local_monitor(sender.clone()) };
 
             Ok(Self {
                 hotkey_ref,
@@ -233,6 +234,80 @@ mod macos_hotkey {
             handler: &*block
         ];
         (monitor, sender_ptr)
+    }
+
+    pub struct StatusItem {
+        item: cocoa::base::id,
+        _target: cocoa::base::id,
+        _sender_ptr: *mut mpsc::UnboundedSender<()>,
+    }
+
+    impl StatusItem {
+        pub unsafe fn new(sender: mpsc::UnboundedSender<()>) -> Self {
+            use cocoa::base::{id, nil};
+            use cocoa::foundation::NSString;
+            use objc::{class, msg_send, sel, sel_impl};
+            use objc::declare::ClassDecl;
+            use objc::runtime::{Object, Sel};
+
+            let sender_ptr = Box::into_raw(Box::new(sender));
+
+            // Define a simple target class for the status item click.
+            let class_name = "GlobalOverlayStatusItemHandler";
+            let class_ptr = unsafe {
+                let mut class_opt = objc::runtime::Class::get(class_name);
+                if class_opt.is_none() {
+                    let mut decl = ClassDecl::new(class_name, class!(NSObject)).unwrap();
+                    decl.add_ivar::<*mut std::ffi::c_void>("sender_ptr");
+
+                    extern "C" fn handle_click(this: &Object, _: Sel, _: id) {
+                        unsafe {
+                            let sender_ptr = *this.get_ivar::<*mut std::ffi::c_void>("sender_ptr")
+                                as *mut mpsc::UnboundedSender<()>;
+                            let sender = &*sender_ptr;
+                            sender.unbounded_send(()).ok();
+                        }
+                    }
+                    decl.add_method(sel!(clicked:), handle_click as extern "C" fn(&Object, Sel, id));
+                    class_opt = Some(decl.register());
+                }
+                class_opt.map_or(std::ptr::null(), |c| c as *const objc::runtime::Class)
+            };
+            let target: id = unsafe { msg_send![class_ptr, alloc] };
+            let target: id = unsafe { msg_send![target, init] };
+            unsafe { (*target).set_ivar("sender_ptr", sender_ptr as *mut std::ffi::c_void) };
+
+            let status_bar: id = unsafe { msg_send![class!(NSStatusBar), systemStatusBar] };
+            // NSVariableStatusItemLength = -1.0
+            let item: id = unsafe { msg_send![status_bar, statusItemWithLength: -1.0f64] };
+            let _: id = unsafe { msg_send![item, retain] };
+            let button: id = unsafe { msg_send![item, button] };
+
+            let title = unsafe { NSString::alloc(nil).init_str("Z") };
+            let _: () = unsafe { msg_send![button, setTitle: title] };
+
+            let _: id = unsafe { msg_send![target, retain] };
+            let _: () = unsafe { msg_send![button, setTarget: target] };
+            let _: () = unsafe { msg_send![button, setAction: sel!(clicked:)] };
+
+            Self {
+                item,
+                _target: target,
+                _sender_ptr: sender_ptr,
+            }
+        }
+    }
+
+    impl Drop for StatusItem {
+        fn drop(&mut self) {
+            unsafe {
+                use objc::{class, msg_send, sel, sel_impl};
+                let status_bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
+                let _: () = msg_send![status_bar, removeStatusItem: self.item];
+                let _ = Box::from_raw(self._sender_ptr);
+                // The target object will be leaked but it's small and only happens once.
+            }
+        }
     }
 }
 
@@ -447,6 +522,8 @@ pub struct OverlayManager {
     is_visible: bool,
     #[cfg(target_os = "macos")]
     previous_app: Option<cocoa::base::id>,
+    #[cfg(target_os = "macos")]
+    _status_item: Option<macos_hotkey::StatusItem>,
     _hotkey: GlobalHotkey,
 }
 
@@ -462,12 +539,16 @@ impl OverlayManager {
         overlay_window: AnyWindowHandle,
         toggle_sender: mpsc::UnboundedSender<()>,
     ) -> Result<Self> {
+        #[cfg(target_os = "macos")]
+        let status_item = Some(unsafe { macos_hotkey::StatusItem::new(toggle_sender.clone()) });
         let hotkey = GlobalHotkey::new(toggle_sender)?;
         Ok(Self {
             overlay_window,
             is_visible: false,
             #[cfg(target_os = "macos")]
             previous_app: None,
+            #[cfg(target_os = "macos")]
+            _status_item: status_item,
             _hotkey: hotkey,
         })
     }
@@ -539,14 +620,6 @@ impl OverlayManager {
 ///
 /// Call this once on startup after the overlay window has been created.
 pub fn init(overlay_window: AnyWindowHandle, cx: &mut App) {
-    #[cfg(target_os = "macos")]
-    unsafe {
-        use objc::{class, msg_send, sel, sel_impl};
-        // Set activation policy to Accessory (1) so that Zed doesn't show in the Dock
-        // when running in overlay mode.
-        let app: cocoa::base::id = msg_send![class!(NSApplication), sharedApplication];
-        let _: () = msg_send![app, setActivationPolicy: 1i64];
-    }
 
     let (toggle_tx, mut toggle_rx) = mpsc::unbounded::<()>();
 

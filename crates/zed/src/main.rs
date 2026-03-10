@@ -56,6 +56,9 @@ use util::{ResultExt, TryFutureExt, maybe};
 use uuid::Uuid;
 #[cfg(feature = "global-overlay")]
 use workspace::AppState as WorkspaceAppState;
+#[cfg(feature = "global-overlay")]
+#[cfg(target_os = "macos")]
+use objc::{class, msg_send, sel, sel_impl};
 use workspace::{
     AppState, MultiWorkspace, SerializedWorkspaceLocation, SessionWorkspace, Toast,
     WorkspaceSettings, WorkspaceStore, notifications::NotificationId, restore_multiworkspace,
@@ -453,6 +456,15 @@ fn main() {
     });
 
     app.run(move |cx| {
+        #[cfg(feature = "global-overlay")]
+        #[cfg(target_os = "macos")]
+        unsafe {
+            let app_class =
+                objc::runtime::Class::get("GPUIApplication").unwrap_or(class!(NSApplication));
+            let app: cocoa::base::id = msg_send![app_class, sharedApplication];
+            let _: () = msg_send![app, setActivationPolicy: 1isize];
+        }
+
         let db_trusted_paths = match workspace::WORKSPACE_DB.fetch_trusted_worktrees() {
             Ok(trusted_paths) => trusted_paths,
             Err(e) => {
@@ -1896,6 +1908,7 @@ fn dump_all_gpui_actions() {
 
 #[cfg(feature = "global-overlay")]
 fn init_global_overlay(app_state: Arc<WorkspaceAppState>, cx: &mut App) {
+
     use gpui::{WindowKind, WindowOptions};
     use workspace::{MultiWorkspace, Workspace};
 
