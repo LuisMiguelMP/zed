@@ -1232,6 +1232,11 @@ pub struct WindowOptions {
 
     /// Tab group name, allows opening the window as a native tab on macOS 10.12+. Windows with the same tabbing identifier will be grouped together.
     pub tabbing_identifier: Option<String>,
+
+    /// macOS only: configure the window as a global overlay panel.
+    /// When true the window will float above all other windows across all Spaces and will not
+    /// appear in the Dock or App Switcher. Has no effect on other platforms.
+    pub overlay: bool,
 }
 
 /// The variables that can be configured when creating a new window
@@ -1282,6 +1287,8 @@ pub struct WindowParams {
     pub window_min_size: Option<Size<Pixels>>,
     #[cfg(target_os = "macos")]
     pub tabbing_identifier: Option<String>,
+    #[cfg(target_os = "macos")]
+    pub overlay: bool,
 }
 
 /// Represents the status of how a window should be opened.
@@ -1340,6 +1347,7 @@ impl Default for WindowOptions {
             window_min_size: None,
             window_decorations: None,
             tabbing_identifier: None,
+            overlay: false,
         }
     }
 }

@@ -75,6 +75,8 @@ x11rb::atom_manager! {
         _NET_WM_WINDOW_TYPE_NOTIFICATION,
         _NET_WM_WINDOW_TYPE_DIALOG,
         _NET_WM_STATE_MODAL,
+        _NET_WM_STATE_ABOVE,
+        _NET_WM_STATE_STICKY,
         _NET_WM_SYNC,
         _NET_SUPPORTED,
         _MOTIF_WM_HINTS,
@@ -625,6 +627,20 @@ impl X11WindowState {
                     &[atoms.WM_DELETE_WINDOW, atoms._NET_WM_SYNC_REQUEST],
                 ),
             )?;
+
+            if params.overlay {
+                // Keep the overlay above all other windows on all virtual desktops.
+                check_reply(
+                    || "X11 ChangeProperty32 setting overlay window state failed.",
+                    xcb.change_property32(
+                        xproto::PropMode::REPLACE,
+                        x_window,
+                        atoms._NET_WM_STATE,
+                        xproto::AtomEnum::ATOM,
+                        &[atoms._NET_WM_STATE_ABOVE, atoms._NET_WM_STATE_STICKY],
+                    ),
+                )?;
+            }
 
             get_reply(
                 || "X11 sync protocol initialize failed.",

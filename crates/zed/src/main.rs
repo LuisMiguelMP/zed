@@ -54,6 +54,8 @@ use std::{
 use theme::{ActiveTheme, GlobalTheme, ThemeRegistry};
 use util::{ResultExt, TryFutureExt, maybe};
 use uuid::Uuid;
+#[cfg(feature = "global-overlay")]
+use workspace::AppState as WorkspaceAppState;
 use workspace::{
     AppState, MultiWorkspace, SerializedWorkspaceLocation, SessionWorkspace, Toast,
     WorkspaceSettings, WorkspaceStore, notifications::NotificationId, restore_multiworkspace,
@@ -877,6 +879,9 @@ fn main() {
         let app_state = app_state.clone();
 
         component_preview::init(app_state.clone(), cx);
+
+        #[cfg(feature = "global-overlay")]
+        init_global_overlay(app_state.clone(), cx);
 
         cx.spawn(async move |cx| {
             while let Some(urls) = open_rx.next().await {
@@ -1887,6 +1892,56 @@ fn dump_all_gpui_actions() {
         serde_json::to_string_pretty(&output).unwrap().as_bytes(),
     )
     .unwrap();
+}
+
+#[cfg(feature = "global-overlay")]
+fn init_global_overlay(app_state: Arc<WorkspaceAppState>, cx: &mut App) {
+    use gpui::{WindowKind, WindowOptions};
+    use workspace::{MultiWorkspace, Workspace};
+
+    let overlay_window = cx.open_window(
+        WindowOptions {
+            titlebar: None,
+            focus: false,
+            show: false,
+            kind: WindowKind::Floating,
+            is_movable: true,
+            is_resizable: true,
+            is_minimizable: false,
+            overlay: true,
+            ..Default::default()
+        },
+        {
+            let app_state = app_state.clone();
+            move |window, cx| {
+                let project = project::Project::local(
+                    app_state.client.clone(),
+                    app_state.node_runtime.clone(),
+                    app_state.user_store.clone(),
+                    app_state.languages.clone(),
+                    app_state.fs.clone(),
+                    None,
+                    project::LocalProjectFlags {
+                        init_worktree_trust: true,
+                        ..project::LocalProjectFlags::default()
+                    },
+                    cx,
+                );
+                let workspace =
+                    cx.new(|cx| Workspace::new(None, project, app_state.clone(), window, cx));
+                cx.new(|cx| MultiWorkspace::new(workspace, window, cx))
+            }
+        },
+    );
+
+    match overlay_window {
+        Ok(overlay_window) => {
+            global_overlay::init(overlay_window.into(), cx);
+        }
+        Err(error) => {
+            log::error!("Failed to create global overlay window: {error:#}");
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]

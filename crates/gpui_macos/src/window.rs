@@ -606,6 +606,7 @@ impl MacWindow {
             display_id,
             window_min_size,
             tabbing_identifier,
+            overlay,
         }: WindowParams,
         foreground_executor: ForegroundExecutor,
         background_executor: BackgroundExecutor,
@@ -818,8 +819,16 @@ impl MacWindow {
             match kind {
                 WindowKind::Normal | WindowKind::Floating => {
                     if kind == WindowKind::Floating {
-                        // Let the window float keep above normal windows.
-                        native_window.setLevel_(NSFloatingWindowLevel);
+                        if overlay {
+                            // Overlay windows float above everything across all Spaces.
+                            native_window.setLevel_(NSFloatingWindowLevel);
+                            native_window.setCollectionBehavior_(
+                                NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
+                            );
+                        } else {
+                            native_window.setLevel_(NSFloatingWindowLevel);
+                        }
                     } else {
                         native_window.setLevel_(NSNormalWindowLevel);
                     }

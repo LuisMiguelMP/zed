@@ -13,6 +13,7 @@ workspace = true
 
 [features]
 tracy = ["ztracing/tracy"]
+global-overlay = ["dep:global_overlay"]
 test-support = [
     "gpui/test-support",
     "gpui_platform/screen-capture",
@@ -220,6 +221,7 @@ zed_actions.workspace = true
 zed_env_vars.workspace = true
 zlog.workspace = true
 zlog_settings.workspace = true
+global_overlay = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 etw_tracing.workspace = true

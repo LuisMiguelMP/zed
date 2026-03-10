@@ -85,6 +85,7 @@ members = [
     "crates/git_graph",
     "crates/git_hosting_providers",
     "crates/git_ui",
+    "crates/global_overlay",
     "crates/go_to_line",
     "crates/google_ai",
     "crates/gpui",
@@ -327,6 +328,7 @@ git = { path = "crates/git" }
 git_graph = { path = "crates/git_graph" }
 git_hosting_providers = { path = "crates/git_hosting_providers" }
 git_ui = { path = "crates/git_ui" }
+global_overlay = { path = "crates/global_overlay" }
 go_to_line = { path = "crates/go_to_line" }
 google_ai = { path = "crates/google_ai" }
 gpui = { path = "crates/gpui", default-features = false }

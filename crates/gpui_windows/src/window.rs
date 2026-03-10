@@ -447,6 +447,10 @@ impl WindowsWindow {
         if !disable_direct_composition {
             dwexstyle |= WS_EX_NOREDIRECTIONBITMAP;
         }
+        if params.overlay {
+            // Overlay windows float above all others and are hidden from the taskbar and Alt+Tab.
+            dwexstyle |= WS_EX_TOPMOST | WS_EX_TOOLWINDOW;
+        }
 
         let hinstance = get_module_handle();
         let display = if let Some(display_id) = params.display_id {
